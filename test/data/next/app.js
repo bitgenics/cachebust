@@ -1,0 +1,5 @@
+'/static/logo.png'
+'/static/logo.svg?blah=foo'
+'/static/subdir/LINC-LOGO-BITGENICS.jpg'
+'/robots.txt'
+'/static/does_not_exist'
