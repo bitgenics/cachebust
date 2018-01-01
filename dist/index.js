@@ -11,18 +11,7 @@ const fixedRootFiles = ['favicon.ico', 'humans.txt', 'robots.txt', 'sitemap.xml'
 
 const fixedNamesPatterns = ['!**/.well-known/**'];
 
-const hashFile = contents => {
-  const hash = crypto.createHash('sha256');
-  hash.update(contents);
-  return hash.digest('hex').substring(0, 8);
-};
-
-const generateNewName = (file, checksum) => {
-  const dirname = path.dirname(file);
-  const ext = path.extname(file);
-  const basename = path.basename(file, ext);
-  return path.join(dirname, `${basename}.${checksum}${ext}`);
-};
+const ensureArray = item => Array.isArray(item) ? item : [item];
 
 const trimSlashes = str => {
   if (str.startsWith('/')) {
@@ -39,8 +28,21 @@ const toPath = str => {
   return str.replace('/', path.sep);
 };
 
+const hashFile = contents => {
+  const hash = crypto.createHash('sha256');
+  hash.update(contents);
+  return hash.digest('hex').substring(0, 8);
+};
+
+const generateNewName = (file, checksum) => {
+  const dirname = path.dirname(file);
+  const ext = path.extname(file);
+  const basename = path.basename(file, ext);
+  return path.join(dirname, `${basename}.${checksum}${ext}`);
+};
+
 const renameStatics = (() => {
-  var _ref = _asyncToGenerator(function* (src, staticPatterns) {
+  var _ref = _asyncToGenerator(function* (src, staticPatterns, shouldCopy) {
     const mapping = {};
     const files = yield globby(staticPatterns, { cwd: src });
     const promises = files.map((() => {
@@ -49,11 +51,15 @@ const renameStatics = (() => {
         const contents = yield fse.readFile(filename);
         const checksum = hashFile(contents);
         const newFile = generateNewName(file, checksum);
-        yield fse.rename(filename, path.resolve(src, newFile));
+        if (shouldCopy) {
+          yield fse.copy(filename, path.resolve(src, newFile));
+        } else {
+          yield fse.rename(filename, path.resolve(src, newFile));
+        }
         mapping[file] = newFile;
       });
 
-      return function (_x3) {
+      return function (_x4) {
         return _ref2.apply(this, arguments);
       };
     })());
@@ -61,27 +67,31 @@ const renameStatics = (() => {
     return mapping;
   });
 
-  return function renameStatics(_x, _x2) {
+  return function renameStatics(_x, _x2, _x3) {
     return _ref.apply(this, arguments);
   };
 })();
 
 const shuffleDirs = (() => {
-  var _ref3 = _asyncToGenerator(function* (staticSrc, staticTarget, targetPrefix) {
+  var _ref3 = _asyncToGenerator(function* (staticSrc, staticTarget, overwrite) {
     staticSrc = path.resolve(staticSrc);
-    const tmpSrc = path.join(path.dirname(staticSrc), '__static');
-    yield fse.rename(staticSrc, tmpSrc);
-    yield fse.ensureDir(path.dirname(staticTarget));
-    yield fse.move(tmpSrc, staticTarget);
+    if (overwrite) {
+      const tmpSrc = path.join(path.dirname(staticSrc), '__static');
+      yield fse.rename(staticSrc, tmpSrc);
+      yield fse.ensureDir(path.dirname(staticTarget));
+      yield fse.move(tmpSrc, staticTarget);
+    } else {
+      yield fse.copy(staticSrc, staticTarget);
+    }
   });
 
-  return function shuffleDirs(_x4, _x5, _x6) {
+  return function shuffleDirs(_x5, _x6, _x7) {
     return _ref3.apply(this, arguments);
   };
 })();
 
 const getAllPatterns = (staticPatterns, rootFiles) => {
-  staticPatterns = Array.isArray(staticPatterns) ? staticPatterns : [staticPatterns];
+  staticPatterns = ensureArray(staticPatterns);
   return staticPatterns.concat(fixedNamesPatterns).concat(rootFiles.map(file => `!${file}`));
 };
 
@@ -90,6 +100,7 @@ const replaceRefs = (() => {
     targetPrefix = trimSlashes(targetPrefix);
     const files = yield globby(patterns, { cwd: path.resolve(dir) });
     const regex = new RegExp(`(['"])\/${trimSlashes(currentPrefix)}/(.*?)(['"?])`, 'g');
+    const report = {};
 
     var _iteratorNormalCompletion = true;
     var _didIteratorError = false;
@@ -101,9 +112,13 @@ const replaceRefs = (() => {
 
         const filename = path.resolve(dir, file);
         const contents = yield fse.readFile(filename, 'utf-8');
-        const replaced = contents.replace(regex, function (match, p1, uri, p3) {
-          const newUri = mappings[uri] || uri;
-          return `${p1}/${targetPrefix}/${newUri}${p3}`;
+        const replaced = contents.replace(regex, function (match, p1, fragment, p3) {
+          fragment = mappings[fragment] || fragment;
+          const newUrl = `${p1}/${targetPrefix}/${fragment}${p3}`;
+          const list = report[file] || [];
+          list.push({ from: match, to: newUrl });
+          report[file] = list;
+          return newUrl;
         });
         yield fse.writeFile(filename, replaced);
       }
@@ -121,9 +136,11 @@ const replaceRefs = (() => {
         }
       }
     }
+
+    return report;
   });
 
-  return function replaceRefs(_x7, _x8, _x9, _x10, _x11) {
+  return function replaceRefs(_x8, _x9, _x10, _x11, _x12) {
     return _ref4.apply(this, arguments);
   };
 })();
@@ -144,35 +161,54 @@ const bumpRootFiles = (() => {
     yield Promise.all(promises);
   });
 
-  return function bumpRootFiles(_x12, _x13, _x14) {
+  return function bumpRootFiles(_x13, _x14, _x15) {
     return _ref5.apply(this, arguments);
   };
 })();
 
 const cachebust = (() => {
   var _ref6 = _asyncToGenerator(function* ({
-    cwd = './.next',
+    currentPrefix,
+    distDir,
+    extraRootFiles = [],
+    moveRootFiles = false,
+    overwrite,
     replacePatterns = '**/*.+(js|json|css|html)',
     staticSrc,
     staticDest,
     staticPatterns = ['**/*'],
-    currentPrefix = '/static',
-    targetPrefix = '/static',
-    extraRootFiles = [],
-    moveRootFiles = false
+    targetPrefix
   } = {}) {
-    staticSrc = staticSrc || path.join(cwd, 'static');
-    staticDest = staticDest || cwd;
+    if (!distDir) {
+      throw new Error('distDir property is required');
+    }
+    distDir = path.resolve(distDir);
+    if (!currentPrefix) {
+      throw new Error('currentPrefix is required');
+    }
+    staticSrc = staticSrc ? path.resolve(distDir, staticSrc) : path.resolve(distDir, toPath(currentPrefix));
+    staticDest = staticDest ? path.resolve(distDir, staticDest) : distDir;
+    targetPrefix = targetPrefix || currentPrefix;
+    overwrite = staticSrc.startsWith(distDir);
     const staticTarget = path.join(staticDest, toPath(targetPrefix));
-
-    yield shuffleDirs(staticSrc, staticTarget, targetPrefix);
-    extraRootFiles = Array.isArray(extraRootFiles) ? extraRootFiles : [extraRootFiles];
+    extraRootFiles = ensureArray(extraRootFiles);
     const allRootFiles = fixedRootFiles.concat(extraRootFiles);
     const allPatterns = getAllPatterns(staticPatterns, allRootFiles);
-    const mappings = yield renameStatics(staticTarget, allPatterns);
-    yield replaceRefs(cwd, replacePatterns, currentPrefix, targetPrefix, mappings);
-    if (moveRootFiles) {
-      bumpRootFiles(staticTarget, staticDest, allRootFiles);
+
+    try {
+      const sameDir = staticSrc === staticTarget;
+      if (!sameDir) {
+        yield shuffleDirs(staticSrc, staticTarget, overwrite);
+      }
+      const shouldCopy = sameDir && !overwrite;
+      const mappings = yield renameStatics(staticTarget, allPatterns, shouldCopy);
+      const report = yield replaceRefs(distDir, replacePatterns, currentPrefix, targetPrefix, mappings);
+      console.log(report);
+      if (moveRootFiles) {
+        bumpRootFiles(staticTarget, staticDest, allRootFiles);
+      }
+    } catch (e) {
+      console.log(e);
     }
   });
 
@@ -182,4 +218,14 @@ const cachebust = (() => {
 })();
 
 module.exports = cachebust;
+module.exports.NEXT = {
+  distDir: './next',
+  staticSrc: './static',
+  currentPrefix: '/static',
+  overwrite: false
+};
+module.exports.CRA = {
+  distDir: './build',
+  currentPrefix: '/public'
+};
 //# sourceMappingURL=index.js.map

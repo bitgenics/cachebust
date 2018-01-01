@@ -13,7 +13,7 @@ const fixedRootFiles = [
 
 const fixedNamesPatterns = ['!**/.well-known/**']
 
-const ensureArray(item) => Array.isArray(item) ? item : [item]
+const ensureArray = (item) => Array.isArray(item) ? item : [item]
 
 const trimSlashes = str => {
   if (str.startsWith('/')) {
@@ -43,7 +43,7 @@ const generateNewName = (file, checksum) => {
   return path.join(dirname, `${basename}.${checksum}${ext}`)
 }
 
-const renameStatics = async (src, staticPatterns) => {
+const renameStatics = async (src, staticPatterns, shouldCopy) => {
   const mapping = {}
   const files = await globby(staticPatterns, { cwd: src })
   const promises = files.map(async file => {
@@ -51,19 +51,27 @@ const renameStatics = async (src, staticPatterns) => {
     const contents = await fse.readFile(filename)
     const checksum = hashFile(contents)
     const newFile = generateNewName(file, checksum)
-    await fse.rename(filename, path.resolve(src, newFile))
+    if(shouldCopy) {
+      await fse.copy(filename, path.resolve(src, newFile))
+    } else {
+      await fse.rename(filename, path.resolve(src, newFile))
+    }
     mapping[file] = newFile
   })
   await Promise.all(promises)
   return mapping
 }
 
-const shuffleDirs = async (staticSrc, staticTarget, targetPrefix) => {
+const shuffleDirs = async (staticSrc, staticTarget, overwrite) => {
   staticSrc = path.resolve(staticSrc)
-  const tmpSrc = path.join(path.dirname(staticSrc), '__static')
-  await fse.rename(staticSrc, tmpSrc)
-  await fse.ensureDir(path.dirname(staticTarget))
-  await fse.move(tmpSrc, staticTarget)
+  if(overwrite) {
+    const tmpSrc = path.join(path.dirname(staticSrc), '__static')
+    await fse.rename(staticSrc, tmpSrc)
+    await fse.ensureDir(path.dirname(staticTarget))
+    await fse.move(tmpSrc, staticTarget)
+  } else {
+    await fse.copy(staticSrc, staticTarget)
+  }
 }
 
 const getAllPatterns = (staticPatterns, rootFiles) => {
@@ -86,16 +94,22 @@ const replaceRefs = async (
     `(['"])\/${trimSlashes(currentPrefix)}/(.*?)(['"?])`,
     'g'
   )
+  const report = {}
 
   for (let file of files) {
     const filename = path.resolve(dir, file)
     const contents = await fse.readFile(filename, 'utf-8')
-    const replaced = contents.replace(regex, (match, p1, uri, p3) => {
-      const newUri = mappings[uri] || uri
-      return `${p1}/${targetPrefix}/${newUri}${p3}`
+    const replaced = contents.replace(regex, (match, p1, fragment, p3) => {
+      fragment = mappings[fragment] || fragment
+      const newUrl = `${p1}/${targetPrefix}/${fragment}${p3}`
+      const list = report[file] || []
+      list.push({from: match, to: newUrl})
+      report[file] = list
+      return newUrl
     })
     await fse.writeFile(filename, replaced)
   }
+  return report
 }
 
 const bumpRootFiles = async (currentDir, rootDir, rootFiles) => {
@@ -110,40 +124,54 @@ const bumpRootFiles = async (currentDir, rootDir, rootFiles) => {
 }
 
 const cachebust = async ({
-  cwd,
+  currentPrefix,
+  distDir,
+  extraRootFiles = [],
+  moveRootFiles = false,
+  overwrite,
   replacePatterns = '**/*.+(js|json|css|html)',
   staticSrc,
   staticDest,
   staticPatterns = ['**/*'],
-  currentPrefix,
   targetPrefix,
-  extraRootFiles = [],
-  moveRootFiles = false
 } = {}) => {
-  if(!cwd) { throw new Error('cwd property is required') }
+  if(!distDir) { throw new Error('distDir property is required') }
+  distDir = path.resolve(distDir)
   if(!currentPrefix) { throw new Error('currentPrefix is required') }
-  staticSrc = staticSrc || path.join(cwd, currentPrefix)
-  staticDest = staticDest || cwd
+  staticSrc = staticSrc ? path.resolve(distDir, staticSrc) : path.resolve(distDir, toPath(currentPrefix));
+  staticDest = staticDest ? path.resolve(distDir, staticDest) : distDir;
   targetPrefix = targetPrefix || currentPrefix
+  overwrite = staticSrc.startsWith(distDir)
   const staticTarget = path.join(staticDest, toPath(targetPrefix))
-
-  await shuffleDirs(staticSrc, staticTarget, targetPrefix)
   extraRootFiles = ensureArray(extraRootFiles)
   const allRootFiles = fixedRootFiles.concat(extraRootFiles)
   const allPatterns = getAllPatterns(staticPatterns, allRootFiles)
-  const mappings = await renameStatics(staticTarget, allPatterns)
-  await replaceRefs(cwd, replacePatterns, currentPrefix, targetPrefix, mappings)
-  if (moveRootFiles) {
-    bumpRootFiles(staticTarget, staticDest, allRootFiles)
+
+  try {
+    const sameDir = (staticSrc === staticTarget)
+    if(!sameDir) {
+      await shuffleDirs(staticSrc, staticTarget, overwrite)
+    }
+    const shouldCopy = sameDir && !overwrite
+    const mappings = await renameStatics(staticTarget, allPatterns, shouldCopy)
+    const report = await replaceRefs(distDir, replacePatterns, currentPrefix, targetPrefix, mappings)
+    console.log(report)
+    if (moveRootFiles) {
+      bumpRootFiles(staticTarget, staticDest, allRootFiles)
+    }
+  } catch (e) {
+    console.log(e)
   }
 }
 
 module.exports = cachebust
 module.exports.NEXT = {
-  cwd: './next'
+  distDir: './next',
+  staticSrc: './static',
   currentPrefix: '/static',
+  overwrite: false
 }
 module.exports.CRA = {
-  cwd: './build'
+  distDir: './build',
   currentPrefix: '/public',
 }

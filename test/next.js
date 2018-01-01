@@ -13,8 +13,6 @@ const test = async () => {
     currentPrefix: 'static',
     staticSrc: nextStaticDir,
     extraRootFiles: 'serviceworker.js',
-    moveRootFiles: true,
-    overwrite: false
   })
   //await fse.remove(rootDir)
 }
