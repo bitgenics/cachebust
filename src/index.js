@@ -125,6 +125,7 @@ const bumpRootFiles = async (currentDir, rootDir, rootFiles) => {
 
 const cachebust = async ({
   currentPrefix,
+  cwd = '.',
   distDir,
   extraRootFiles = [],
   moveRootFiles = false,
@@ -136,16 +137,24 @@ const cachebust = async ({
   targetPrefix,
 } = {}) => {
   if(!distDir) { throw new Error('distDir property is required') }
-  distDir = path.resolve(distDir)
+  distDir = path.resolve(cwd, distDir)
   if(!currentPrefix) { throw new Error('currentPrefix is required') }
-  staticSrc = staticSrc ? path.resolve(distDir, staticSrc) : path.resolve(distDir, toPath(currentPrefix));
-  staticDest = staticDest ? path.resolve(distDir, staticDest) : distDir;
+  staticSrc = staticSrc ? path.resolve(cwd, staticSrc) : path.resolve(distDir, toPath(currentPrefix));
+  staticDest = staticDest ? path.resolve(cwd, staticDest) : distDir;
   targetPrefix = targetPrefix || currentPrefix
-  overwrite = staticSrc.startsWith(distDir)
+  overwrite = overwrite || staticSrc.startsWith(distDir)
   const staticTarget = path.join(staticDest, toPath(targetPrefix))
   extraRootFiles = ensureArray(extraRootFiles)
   const allRootFiles = fixedRootFiles.concat(extraRootFiles)
   const allPatterns = getAllPatterns(staticPatterns, allRootFiles)
+
+  console.log('cwd', cwd)
+  console.log('distDir', distDir)
+  console.log('staticSrc', staticSrc)
+  console.log('staticDest', staticDest)
+  console.log('staticTarget', staticTarget)
+  console.log('targetPrefix', targetPrefix)
+  console.log('overwrite', overwrite)
 
   try {
     const sameDir = (staticSrc === staticTarget)
@@ -154,8 +163,14 @@ const cachebust = async ({
     }
     const shouldCopy = sameDir && !overwrite
     const mappings = await renameStatics(staticTarget, allPatterns, shouldCopy)
-    const report = await replaceRefs(distDir, replacePatterns, currentPrefix, targetPrefix, mappings)
-    console.log(report)
+    const replaceOptions = [replacePatterns, currentPrefix, targetPrefix, mappings]
+    let report = await replaceRefs(distDir, ...replaceOptions)
+    const targetInDist = staticTarget.startsWith(distDir)
+    if(!targetInDist) {
+      const report2 = await replaceRefs(staticTarget, ...replaceOptions)
+      report = Object.assign({}, report, report2)
+    }
+    return report
     if (moveRootFiles) {
       bumpRootFiles(staticTarget, staticDest, allRootFiles)
     }
@@ -165,13 +180,31 @@ const cachebust = async ({
 }
 
 module.exports = cachebust
-module.exports.NEXT = {
-  distDir: './next',
-  staticSrc: './static',
-  currentPrefix: '/static',
-  overwrite: false
+module.exports.NEXT_SAFE = (extra = {}) => {
+  const defaults = {
+    distDir: './.next',
+    staticSrc: './static',
+    currentPrefix: '/static',
+    overwrite: false
+  }
+  return Object.assign({}, defaults, extra)
 }
-module.exports.CRA = {
-  distDir: './build',
-  currentPrefix: '/public',
+
+module.exports.NEXT_OVERWRITE = (extra = {}) => {
+  const defaults = {
+    distDir: './.next',
+    staticSrc: './static',
+    staticDest: '.',
+    currentPrefix: '/static',
+    overwrite: true
+  }
+  return Object.assign({}, defaults, extra)
+}
+
+module.exports.CRA = (extra = {}) => {
+  const defaults = {
+    distDir: './build',
+    currentPrefix: '/public',
+  }
+  return Object.assign({}, defaults, extra)
 }
