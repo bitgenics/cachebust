@@ -1,9 +1,9 @@
 {
-  "name": "@bitgenics/cachebust-hash",
+  "name": "@bitgenics/cachebust",
   "version": "0.1.0",
   "description": "Simple command line utility to add hashes to static assets and replace original urls",
   "main": "dist/index.js",
-  "repository": "git@github.com:bitgenics/cachebust-hash.git",
+  "repository": "git@github.com:bitgenics/cachebust.git",
   "author": "Erwin van der Koogh <hello@bitgenics.io>",
   "license": "MIT",
   "private": false,
