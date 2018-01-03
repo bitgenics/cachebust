@@ -8,7 +8,7 @@ const test = async () => {
   await fse.ensureDir(path.dirname(rootDir))
   await fse.copy(path.resolve(__dirname, '../test/data/next'), rootDir)
   const nextStaticDir = path.join(rootDir, 'static')
-  const options = cachebust.NEXT_OVERWRITE({cwd: rootDir, extraRootFiles: 'serviceworker.js'})
+  const options = cachebust.NEXT_SAFE({cwd: rootDir, extraRootFiles: 'serviceworker.js'})
   const report = await cachebust(options)
   console.log(report)
   //await fse.remove(rootDir)

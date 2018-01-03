@@ -148,14 +148,6 @@ const cachebust = async ({
   const allRootFiles = fixedRootFiles.concat(extraRootFiles)
   const allPatterns = getAllPatterns(staticPatterns, allRootFiles)
 
-  console.log('cwd', cwd)
-  console.log('distDir', distDir)
-  console.log('staticSrc', staticSrc)
-  console.log('staticDest', staticDest)
-  console.log('staticTarget', staticTarget)
-  console.log('targetPrefix', targetPrefix)
-  console.log('overwrite', overwrite)
-
   try {
     const sameDir = (staticSrc === staticTarget)
     if(!sameDir) {
