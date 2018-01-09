@@ -91,7 +91,7 @@ const replaceRefs = async (
   targetPrefix = trimSlashes(targetPrefix)
   const files = await globby(patterns, { cwd: path.resolve(dir) })
   const regex = new RegExp(
-    `(['"])\/${trimSlashes(currentPrefix)}/(.*?)(['"?])`,
+    `([('"])\s?\/${trimSlashes(currentPrefix)}\/(.*?)([)'"?])`,
     'g'
   )
   const report = {}
