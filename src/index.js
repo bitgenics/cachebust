@@ -91,7 +91,7 @@ const replaceRefs = async (
   targetPrefix = trimSlashes(targetPrefix)
   const files = await globby(patterns, { cwd: path.resolve(dir) })
   const regex = new RegExp(
-    `([('"])\s?\/${trimSlashes(currentPrefix)}\/(.*?)([)'"?])`,
+    `([('"])\s?(https?:\/\/[\\w\\.-]*?)?\/${trimSlashes(currentPrefix)}\/(.*?)([)'"?])`,
     'g'
   )
   const report = {}
@@ -99,14 +99,17 @@ const replaceRefs = async (
   for (let file of files) {
     const filename = path.resolve(dir, file)
     const contents = await fse.readFile(filename, 'utf-8')
-    const replaced = contents.replace(regex, (match, p1, fragment, p3) => {
-      fragment = mappings[fragment] || fragment
-      const newUrl = `${p1}/${targetPrefix}/${fragment}${p3}`
-      const list = report[file] || []
-      list.push({ from: match, to: newUrl })
-      report[file] = list
-      return newUrl
-    })
+    const replaced = contents.replace(
+      regex,
+      (match, p1, domain, fragment, p4) => {
+        fragment = mappings[fragment] || fragment
+        const newUrl = `${p1}${domain || ''}/${targetPrefix}/${fragment}${p4}`
+        const list = report[file] || []
+        list.push({ from: match, to: newUrl })
+        report[file] = list
+        return newUrl
+      }
+    )
     await fse.writeFile(filename, replaced)
   }
   return report
@@ -165,7 +168,7 @@ const cachebust = async ({
       replacePatterns,
       currentPrefix,
       targetPrefix,
-      mappings
+      mappings,
     ]
     let report = await replaceRefs(distDir, ...replaceOptions)
     const targetInDist = staticTarget.startsWith(distDir)
