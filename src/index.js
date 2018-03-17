@@ -8,6 +8,9 @@ const fixedRootFiles = [
   'humans.txt',
   'robots.txt',
   'sitemap.xml',
+  'manifest.json',
+  'sw.js',
+  'service-worker.js',
   '.well-known'
 ]
 
