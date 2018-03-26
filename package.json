@@ -1,6 +1,6 @@
 {
   "name": "@bitgenics/cachebust",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "description": "Simple command line utility to add hashes to static assets and replace original urls",
   "main": "dist/index.js",
   "repository": "git@github.com:bitgenics/cachebust.git",
