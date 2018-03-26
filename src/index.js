@@ -91,10 +91,11 @@ const replaceRefs = async (
   targetPrefix,
   mappings
 ) => {
-  targetPrefix = trimSlashes(targetPrefix)
   const files = await globby(patterns, { cwd: path.resolve(dir) })
   const regex = new RegExp(
-    `([('"])\s?(https?:\/\/[\\w\\.-]*?)?\/${trimSlashes(currentPrefix)}\/(.*?)([)'"?])`,
+    `([('"])\s?(https?:\/\/[\\w\\.-]*?)?\/?${trimSlashes(
+      currentPrefix
+    )}\/(.*?)([)'"?])`,
     'g'
   )
   const report = {}
@@ -106,7 +107,7 @@ const replaceRefs = async (
       regex,
       (match, p1, domain, fragment, p4) => {
         fragment = mappings[fragment] || fragment
-        const newUrl = `${p1}${domain || ''}/${targetPrefix}/${fragment}${p4}`
+        const newUrl = `${p1}${domain || ''}${targetPrefix}/${fragment}${p4}`
         const list = report[file] || []
         list.push({ from: match, to: newUrl })
         report[file] = list
@@ -174,7 +175,7 @@ const cachebust = async ({
       replacePatterns,
       currentPrefix,
       targetPrefix,
-      mappings,
+      mappings
     ]
     let report = await replaceRefs(distDir, ...replaceOptions)
     const targetInDist = staticTarget.startsWith(distDir)
