@@ -41,24 +41,31 @@ const hashFile = contents => {
 
 const generateNewName = (file, checksum) => {
   const dirname = path.dirname(file)
-  const ext = path.extname(file)
+  let ext = path.extname(file)
+  if(ext === '.map') {
+    ext = path.extname(path.basename(file, ext)) + '.map'
+  }
   const basename = path.basename(file, ext)
   return path.join(dirname, `${basename}.${checksum}${ext}`)
 }
 
-const renameStatics = async (src, staticPatterns, shouldCopy) => {
+const findFiles = async (src) => {
+  const files = await globby(['**/*'], { cwd: src })
   const mapping = {}
+  files.forEach((file) => {
+    mapping[file] = file
+  })
+  return mapping
+}
+
+const hashFiles = async (src, mapping, staticPatterns) => {
   const files = await globby(staticPatterns, { cwd: src })
   const promises = files.map(async file => {
     const filename = path.resolve(src, file)
     const contents = await fse.readFile(filename)
     const checksum = hashFile(contents)
     const newFile = generateNewName(file, checksum)
-    if (shouldCopy) {
-      await fse.copy(filename, path.resolve(src, newFile))
-    } else {
-      await fse.rename(filename, path.resolve(src, newFile))
-    }
+    await fse.rename(filename, path.resolve(src, newFile))
     mapping[file] = newFile
   })
   await Promise.all(promises)
@@ -106,12 +113,16 @@ const replaceRefs = async (
     const replaced = contents.replace(
       regex,
       (match, p1, domain, fragment, p4) => {
-        fragment = mappings[fragment] || fragment
-        const newUrl = `${p1}${domain || ''}${targetPrefix}/${fragment}${p4}`
-        const list = report[file] || []
-        list.push({ from: match, to: newUrl })
-        report[file] = list
-        return newUrl
+        if(mappings[fragment]) {
+          fragment = mappings[fragment] || fragment
+          const newUrl = `${p1}${domain || ''}${targetPrefix}/${fragment}${p4}`
+          const list = report[file] || []
+          list.push({ from: match, to: newUrl })
+          report[file] = list
+          return newUrl  
+        } else {
+          return match
+        }
       }
     )
     await fse.writeFile(filename, replaced)
@@ -131,12 +142,13 @@ const bumpRootFiles = async (currentDir, rootDir, rootFiles) => {
 }
 
 const cachebust = async ({
+  buildDir,
   currentPrefix,
   cwd = '.',
   distDir,
   extraRootFiles = [],
   moveRootFiles = false,
-  nohash = false,
+  hash = true,
   overwrite,
   replacePatterns = '**/*.+(js|json|css|html)',
   staticSrc,
@@ -144,6 +156,7 @@ const cachebust = async ({
   staticPatterns = ['**/*'],
   targetPrefix
 } = {}) => {
+  distDir = distDir || buildDir
   if (!distDir) {
     throw new Error('distDir property is required')
   }
@@ -156,7 +169,6 @@ const cachebust = async ({
     : path.resolve(distDir, toPath(currentPrefix))
   staticDest = staticDest ? path.resolve(cwd, staticDest) : distDir
   targetPrefix = targetPrefix || currentPrefix
-  overwrite = overwrite || staticSrc.startsWith(distDir)
   const staticTarget = path.join(staticDest, toPath(targetPrefix))
   extraRootFiles = ensureArray(extraRootFiles)
   const allRootFiles = fixedRootFiles.concat(extraRootFiles)
@@ -164,13 +176,20 @@ const cachebust = async ({
 
   try {
     const sameDir = staticSrc === staticTarget
-    if (!sameDir) {
-      await shuffleDirs(staticSrc, staticTarget, overwrite)
+    const srcInDist = staticSrc.startsWith(distDir)
+    if(sameDir && !srcInDist && !overwrite) {
+      throw new Error(`The src and destination for the files are the same and outside the build directory.
+To prevent you from accidently renaming your source folder we require the explicit 'overwrite' options to be set`)
     }
-    const shouldCopy = sameDir && !overwrite
-    const mappings = nohash
-      ? {}
-      : await renameStatics(staticTarget, allPatterns, shouldCopy)
+    if (!sameDir) {
+      const move = overwrite || srcInDist
+      await shuffleDirs(staticSrc, staticTarget, move)
+    }
+    const mappings = await findFiles(staticTarget)
+    if(hash) {
+      await hashFiles(staticTarget, mappings, allPatterns)
+    }
+
     const replaceOptions = [
       replacePatterns,
       currentPrefix,
