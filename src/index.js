@@ -135,6 +135,7 @@ const cachebust = async ({
   distDir,
   extraRootFiles = [],
   moveRootFiles = false,
+  nohash = false,
   overwrite,
   replacePatterns = '**/*.+(js|json|css|html)',
   staticSrc,
@@ -166,7 +167,9 @@ const cachebust = async ({
       await shuffleDirs(staticSrc, staticTarget, overwrite)
     }
     const shouldCopy = sameDir && !overwrite
-    const mappings = await renameStatics(staticTarget, allPatterns, shouldCopy)
+    const mappings = nohash
+      ? {}
+      : await renameStatics(staticTarget, allPatterns, shouldCopy)
     const replaceOptions = [
       replacePatterns,
       currentPrefix,
