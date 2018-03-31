@@ -98,9 +98,10 @@ const replaceRefs = async (
   targetPrefix,
   mappings
 ) => {
+  targetPrefix = trimSlashes(targetPrefix)
   const files = await globby(patterns, { cwd: path.resolve(dir) })
   const regex = new RegExp(
-    `([('"])\s?(https?:\/\/[\\w\\.-]*?)?\/?${trimSlashes(
+    `([('"])\s?(https?:\/\/[\\w\\.-]*?)?(\/?)${trimSlashes(
       currentPrefix
     )}\/(.*?)([)'"?])`,
     'g'
@@ -112,10 +113,10 @@ const replaceRefs = async (
     const contents = await fse.readFile(filename, 'utf-8')
     const replaced = contents.replace(
       regex,
-      (match, p1, domain, fragment, p4) => {
+      (match, start, domain = '', slash = '', fragment, end) => {
         if(mappings[fragment]) {
           fragment = mappings[fragment] || fragment
-          const newUrl = `${p1}${domain || ''}${targetPrefix}/${fragment}${p4}`
+          const newUrl = `${start}${domain}${slash}${targetPrefix}/${fragment}${end}`
           const list = report[file] || []
           list.push({ from: match, to: newUrl })
           report[file] = list
