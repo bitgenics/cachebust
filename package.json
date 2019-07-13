@@ -25,6 +25,6 @@
   },
   "dependencies": {
     "fs-extra": "^8.1.0",
-    "globby": "^7.1.1"
+    "globby": "^10.0.1"
   }
 }
